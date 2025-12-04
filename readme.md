@@ -170,7 +170,7 @@ Open the URL shown in the terminal.
 - HTML5 Canvas
 - Vanilla JavaScript (ES6)
 - CSS3
-- Hamming (7,4) error-correcting code
+- Hamming error-correcting code
 
 ---
 
