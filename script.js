@@ -3,17 +3,10 @@ const imageState = {
   image: null,
   width: 0,
   height: 0,
-  selection: null, // { x, y, w, h } in original image coordinates
-  selectionScale: null, // { scale, offsetX, offsetY } for selection canvas
+  selection: null, // { x, y, w, h } in image coordinates
   originalImageData: null,
   corruptedImageData: null,
   correctedImageData: null,
-};
-
-// Logical display size for selection canvas
-const selectionDisplay = {
-  width: 640,
-  height: 420,
 };
 
 // Elements
@@ -90,9 +83,9 @@ function onImageLoaded(img) {
   imageState.width = img.naturalWidth;
   imageState.height = img.naturalHeight;
 
-  // Use a fixed logical size for the selection canvas
-  selectionCanvas.width = selectionDisplay.width;
-  selectionCanvas.height = selectionDisplay.height;
+  // Selection canvas matches image size (internal)
+  selectionCanvas.width = imageState.width;
+  selectionCanvas.height = imageState.height;
 
   // Clear any previous selection
   imageState.selection = null;
@@ -113,27 +106,17 @@ function onImageLoaded(img) {
   setupOutputCanvasSizes();
 }
 
-// Draw scaled image onto selection canvas
+// Draw image at 1:1 into selection canvas
 function drawBaseImageOnSelectionCanvas() {
   if (!imageState.image) return;
-
-  const imgW = imageState.width;
-  const imgH = imageState.height;
-  const canvasW = selectionDisplay.width;
-  const canvasH = selectionDisplay.height;
-
-  selectionCtx.clearRect(0, 0, canvasW, canvasH);
-
-  // Fit image into canvas while keeping aspect ratio
-  const scale = Math.min(canvasW / imgW, canvasH / imgH);
-  const drawW = imgW * scale;
-  const drawH = imgH * scale;
-  const offsetX = (canvasW - drawW) / 2;
-  const offsetY = (canvasH - drawH) / 2;
-
-  imageState.selectionScale = { scale, offsetX, offsetY };
-
-  selectionCtx.drawImage(imageState.image, offsetX, offsetY, drawW, drawH);
+  selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+  selectionCtx.drawImage(
+    imageState.image,
+    0,
+    0,
+    imageState.width,
+    imageState.height
+  );
 }
 
 // --- Selection handling ---
@@ -145,21 +128,10 @@ function setupSelectionCanvas() {
 
   function getCanvasRelativePos(evt) {
     const rect = selectionCanvas.getBoundingClientRect();
-    const xInCanvas =
-      ((evt.clientX - rect.left) / rect.width) * selectionCanvas.width;
-    const yInCanvas =
-      ((evt.clientY - rect.top) / rect.height) * selectionCanvas.height;
-
-    const s = imageState.selectionScale;
-    if (!s) {
-      return { x: 0, y: 0 };
-    }
-
-    // Convert from selection canvas space back to original image coordinates
-    const imgX = (xInCanvas - s.offsetX) / s.scale;
-    const imgY = (yInCanvas - s.offsetY) / s.scale;
-
-    return { x: imgX, y: imgY };
+    // Convert from DOM pixels to canvas pixels (1:1 with image)
+    const x = ((evt.clientX - rect.left) / rect.width) * selectionCanvas.width;
+    const y = ((evt.clientY - rect.top) / rect.height) * selectionCanvas.height;
+    return { x, y };
   }
 
   selectionCanvas.addEventListener("mousedown", (evt) => {
@@ -208,29 +180,22 @@ function setupSelectionCanvas() {
   });
 }
 
-// Draw selection overlay (in selection canvas space)
+// Draw selection overlay (same coordinate system as image)
 function drawSelectionOverlay() {
   drawBaseImageOnSelectionCanvas();
   const sel = imageState.selection;
-  const s = imageState.selectionScale;
-  if (!sel || !s) return;
-
-  // Map selection from image coords to selection canvas coords
-  const x = s.offsetX + sel.x * s.scale;
-  const y = s.offsetY + sel.y * s.scale;
-  const w = sel.w * s.scale;
-  const h = sel.h * s.scale;
+  if (!sel) return;
 
   selectionCtx.save();
 
   // Light green translucent fill
-  selectionCtx.fillStyle = "rgba(187, 247, 208, 0.25)"; // soft light green
-  selectionCtx.fillRect(x, y, w, h);
+  selectionCtx.fillStyle = "rgba(187, 247, 208, 0.25)";
+  selectionCtx.fillRect(sel.x, sel.y, sel.w, sel.h);
 
-  // Dark green border for clear edges
-  selectionCtx.strokeStyle = "rgba(22, 101, 52, 0.95)"; // dark green
+  // Dark green border
+  selectionCtx.strokeStyle = "rgba(22, 101, 52, 0.95)";
   selectionCtx.lineWidth = 2;
-  selectionCtx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  selectionCtx.strokeRect(sel.x + 1, sel.y + 1, sel.w - 2, sel.h - 2);
 
   selectionCtx.restore();
 }
@@ -260,7 +225,7 @@ function runSimulation() {
   const fullImageData = getOriginalImageDataFromImage();
   imageState.originalImageData = fullImageData;
 
-  // Clone for corrupted and corrected (start as exact copies of original)
+  // Clone for corrupted and corrected
   const corrupted = new ImageData(
     new Uint8ClampedArray(fullImageData.data),
     fullImageData.width,
@@ -285,7 +250,7 @@ function runSimulation() {
     errorsCorrected: 0,
   };
 
-  const codewordRecords = []; // store info for every (7,4) codeword in region
+  const codewordRecords = [];
 
   // Process region pixel by pixel
   for (let y = sy; y < sy + sh; y++) {
@@ -296,10 +261,8 @@ function runSimulation() {
       const g0 = fullImageData.data[idx + 1];
       const b0 = fullImageData.data[idx + 2];
 
-      // Convert this pixel to grayscale for Hamming processing
       const gray = Math.round(0.299 * r0 + 0.587 * g0 + 0.114 * b0);
 
-      // Break into two 4-bit nibbles
       const highNibble = (gray >> 4) & 0b1111;
       const lowNibble = gray & 0b1111;
 
@@ -316,17 +279,14 @@ function runSimulation() {
 
         stats.totalBlocks += 1;
 
-        // Encode
         const codeword = hammingEncode(dataBits);
         stats.totalCodewords += 1;
 
-        // Introduce exactly one bit error
         const bitIndex = Math.floor(Math.random() * 7); // 0..6
         const received = codeword.slice();
         received[bitIndex] = received[bitIndex] ^ 1;
         stats.errorsIntroduced += 1;
 
-        // Decode
         const decodeResult = hammingDecode(received);
 
         if (decodeResult.errorPosition > 0) {
@@ -361,11 +321,9 @@ function runSimulation() {
         codewordRecords.push(record);
       });
 
-      // Build new grayscale value from decoded nibbles
       const newGray =
         (processedNibbles[0].newNibble << 4) | processedNibbles[1].newNibble;
 
-      // Corrupted image: approximate a corrupted gray from received data bits
       const corruptedHighBits =
         (processedNibbles[0].received[0] << 3) |
         (processedNibbles[0].received[1] << 2) |
@@ -378,12 +336,10 @@ function runSimulation() {
         processedNibbles[1].received[3];
       const corruptedGray = (corruptedHighBits << 4) | corruptedLowBits;
 
-      // Write into corrupted image data (selected region only)
       corrupted.data[idx] = corruptedGray;
       corrupted.data[idx + 1] = corruptedGray;
       corrupted.data[idx + 2] = corruptedGray;
 
-      // Write into corrected image data (selected region only)
       corrected.data[idx] = newGray;
       corrected.data[idx + 1] = newGray;
       corrected.data[idx + 2] = newGray;
@@ -393,10 +349,8 @@ function runSimulation() {
   imageState.corruptedImageData = corrupted;
   imageState.correctedImageData = corrected;
 
-  // Render images
   renderOutputCanvases();
 
-  // Update Hamming details
   if (codewordRecords.length > 0) {
     fillHammingDetails(codewordRecords, stats, { sx, sy, sw, sh });
     hammingStatusEl.textContent =
@@ -423,9 +377,7 @@ function getOriginalImageDataFromImage() {
 
 // --- Hamming (7,4) core functions ---
 
-// Using standard (7,4) Hamming with parity bits in positions 1,2,4.
-// Data bits [d1, d2, d3, d4] form codeword [p1, p2, d1, p3, d2, d3, d4]
-
+// Data bits [d1, d2, d3, d4] -> codeword [p1, p2, d1, p3, d2, d3, d4]
 function hammingEncode(dataBits) {
   const [d1, d2, d3, d4] = dataBits.map((b) => b & 1);
 
@@ -433,22 +385,18 @@ function hammingEncode(dataBits) {
   const p2 = d1 ^ d3 ^ d4; // parity for positions 2,3,6,7
   const p3 = d2 ^ d3 ^ d4; // parity for positions 4,5,6,7
 
-  // codeword positions 1..7
   return [p1, p2, d1, p3, d2, d3, d4];
 }
 
 function hammingDecode(received) {
-  // received is array [b1..b7]
   const b = received.map((bit) => bit & 1);
   const [b1, b2, b3, b4, b5, b6, b7] = b;
 
-  // Calculate syndrome bits
-  const s1 = b1 ^ b3 ^ b5 ^ b7; // checks parity 1
-  const s2 = b2 ^ b3 ^ b6 ^ b7; // checks parity 2
-  const s3 = b4 ^ b5 ^ b6 ^ b7; // checks parity 3
+  const s1 = b1 ^ b3 ^ b5 ^ b7;
+  const s2 = b2 ^ b3 ^ b6 ^ b7;
+  const s3 = b4 ^ b5 ^ b6 ^ b7;
 
   const syndromeBits = [s1, s2, s3];
-  // Syndrome interpreted as binary index (s3 s2 s1)
   const errorPosition = s1 + (s2 << 1) + (s3 << 2); // 0..7
 
   const corrected = b.slice();
@@ -456,7 +404,6 @@ function hammingDecode(received) {
     corrected[errorPosition - 1] ^= 1;
   }
 
-  // Extract data bits from corrected codeword: positions 3,5,6,7
   const dataBits = [corrected[2], corrected[4], corrected[5], corrected[6]];
 
   return {
@@ -477,7 +424,6 @@ function resetHammingSection() {
 function fillHammingDetails(codewordRecords, stats, regionInfo) {
   hammingContentEl.classList.remove("hidden");
 
-  // 1) Region summary
   const totalPixels = regionInfo.sw * regionInfo.sh;
 
   document.getElementById("summary-total-pixels").textContent = totalPixels;
@@ -490,12 +436,11 @@ function fillHammingDetails(codewordRecords, stats, regionInfo) {
   document.getElementById("summary-errors-corrected").textContent =
     stats.errorsCorrected;
 
-  // 2) Code definition matrices G and H (fixed for whole region)
   const G = [
-    [1, 0, 0, 0, 1, 1, 0], // d1
-    [0, 1, 0, 0, 1, 0, 1], // d2
-    [0, 0, 1, 0, 1, 0, 0], // d3
-    [0, 0, 0, 1, 0, 1, 1], // d4
+    [1, 0, 0, 0, 1, 1, 0],
+    [0, 1, 0, 0, 1, 0, 1],
+    [0, 0, 1, 0, 1, 0, 0],
+    [0, 0, 0, 1, 0, 1, 1],
   ];
 
   const H = [
@@ -507,7 +452,6 @@ function fillHammingDetails(codewordRecords, stats, regionInfo) {
   renderMatrix("matrix-G", G);
   renderMatrix("matrix-H", H);
 
-  // 3) Codeword inspector
   const inspectorRangeEl = document.getElementById("inspector-range");
   const indexInput = document.getElementById("codeword-index-input");
 
@@ -538,7 +482,6 @@ function fillHammingDetails(codewordRecords, stats, regionInfo) {
       decodeResult,
     } = rec;
 
-    // Pixel & gray info
     document.getElementById("insp-coords").textContent = `(${x}, ${y})`;
     document.getElementById("insp-nibble-index").textContent =
       nibbleIndex === 0
@@ -550,7 +493,6 @@ function fillHammingDetails(codewordRecords, stats, regionInfo) {
     const grayBits = gray.toString(2).padStart(8, "0").split("").join(" ");
     document.getElementById("insp-gray-bits").textContent = grayBits;
 
-    // Hamming details
     document.getElementById("insp-data-bits").textContent = dataBits.join(" ");
     document.getElementById("insp-codeword-C").textContent = codeword.join(" ");
     document.getElementById("insp-error-bit-index").textContent =
@@ -567,10 +509,8 @@ function fillHammingDetails(codewordRecords, stats, regionInfo) {
       decodeResult.dataBits.join(" ");
   }
 
-  // Initial render
   renderInspectorForIndex(1);
 
-  // On input change
   indexInput.addEventListener("input", () => {
     const val = parseInt(indexInput.value, 10);
     if (Number.isNaN(val)) return;
@@ -578,7 +518,6 @@ function fillHammingDetails(codewordRecords, stats, regionInfo) {
   });
 }
 
-// Render a small binary matrix into a container by id
 function renderMatrix(containerId, matrix) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";

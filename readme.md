@@ -16,7 +16,8 @@ Built with **plain HTML, CSS, and JavaScript** (no frameworks).
 
 ## Live Demo
 
-**Live URL:** (will be updated after deployment)
+**Live URL:**  
+https://hamming-image-simulator.vercel.app
 
 ---
 
@@ -111,14 +112,13 @@ Three canvases:
 
 1. **Upload image**
 
-   - Image is drawn to an off-screen canvas.
+   - Image is drawn to a canvas.
    - Pixel data is read using `getImageData`.
 
 2. **Selection mapping**
 
-   - Selection canvas has a fixed logical size.
-   - Image is scaled to fit, keeping aspect ratio.
-   - Mouse positions are mapped from screen → selection canvas → original image coordinates.
+   - Selection canvas uses the same resolution as the image.
+   - Mouse positions are mapped from screen → canvas → original image coordinates (1:1).
 
 3. **Hamming processing**
 
@@ -160,13 +160,8 @@ Open the URL shown in the terminal.
 
 ## Deploying
 
-- Push this project to a GitHub repository.
-- Import the repo into Vercel.
-- Use it as a static site:
-  - No build command.
-  - Output directory: `.`
-
-Vercel will serve `index.html` as the entry point.
+- Repo is deployed as a static site on Vercel.
+- Live URL: https://hamming-image-simulator.vercel.app
 
 ---
 
@@ -181,6 +176,7 @@ Vercel will serve `index.html` as the entry point.
 
 ## Authors
 
-- 1CR233C002
 - 1CR233C059
+
+- 1CR233C002
 - 1CR23EC043

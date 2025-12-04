@@ -197,12 +197,25 @@ input[type="number"]:focus {
 }
 
 /* Fixed visual size; internal size handled in JS */
+/* Selection canvas: responsive, keeps aspect ratio */
 #selection-canvas {
   display: block;
-  max-width: 100%;
-  max-height: 420px;
-  width: auto;
+  width: 100%;
   height: auto;
+}
+
+/* Output canvases: same idea */
+/* Default: show crosshair when hovering the selection canvas */
+#selection-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+}
+
+/* Keep crosshair while dragging as well */
+#selection-canvas:active {
+  cursor: crosshair;
 }
 
 .selection-info-row {
