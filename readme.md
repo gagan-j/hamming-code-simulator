@@ -176,7 +176,7 @@ Open the URL shown in the terminal.
 
 ## Authors
 
-- 1CR233C059
+- 1CR233C059  
 
 - 1CR233C002
 - 1CR23EC043
