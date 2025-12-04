@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Hamming Image Simulator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="https://www.svgrepo.com/show/357889/image-edit.svg"
+    />
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <h1 class="page-title">Hamming (7,4) Image Simulator</h1>
+      <p class="page-subtitle">
+        Upload an image, select a region, simulate bit-level noise, and
+        visualize Hamming code detection and correction.
+      </p>
+    </header>
+
+    <main class="page-main">
+      <!-- Section 1: Upload -->
+      <section class="card" id="upload-section">
+        <h2 class="section-title">1. Upload Image</h2>
+
+        <div class="field">
+          <label for="image-input" class="field-label"
+            >Select an image (PNG or JPEG)</label
+          >
+          <input type="file" id="image-input" accept="image/png,image/jpeg" />
+        </div>
+
+        <p class="helper-text" id="image-info">
+          No image loaded yet. Please upload an image to begin.
+        </p>
+      </section>
+
+      <!-- Section 2: Region selection -->
+      <section class="card" id="selection-section">
+        <h2 class="section-title">2. Select Region</h2>
+        <p class="section-description">
+          After uploading, the image will appear below. Click and drag on the
+          image to select a rectangular region where noise will be added and
+          corrected using Hamming (7,4).
+        </p>
+
+        <div class="canvas-wrapper">
+          <canvas id="selection-canvas"></canvas>
+        </div>
+
+        <div class="selection-info-row">
+          <p class="selection-info" id="selection-coords">
+            No region selected. Click and drag on the image to select a
+            rectangle.
+          </p>
+          <button id="run-simulation-btn" class="primary-btn" disabled>
+            Confirm Selection &amp; Run Hamming Simulation
+          </button>
+        </div>
+      </section>
+
+      <!-- Section 3: Hamming process details -->
+      <section class="card" id="hamming-section">
+        <h2 class="section-title">3. Hamming (7,4) Process Details</h2>
+        <p class="section-description">
+          This section shows the actual Hamming (7,4) code used on every 4-bit
+          block in the selected region, along with live statistics and an
+          inspector to view any individual codeword.
+        </p>
+
+        <div id="hamming-status" class="helper-text">
+          Run the simulation to see live data from your selected region.
+        </div>
+
+        <div id="hamming-content" class="hamming-content hidden">
+          <!-- Region summary -->
+          <section class="hamming-block" id="summary-block">
+            <h3 class="hamming-subtitle">Region Summary (Live)</h3>
+            <ul class="summary-list">
+              <li>
+                Total pixels in selected region:
+                <span id="summary-total-pixels" class="summary-value"></span>
+              </li>
+              <li>
+                Total 4-bit data blocks:
+                <span id="summary-total-blocks" class="summary-value"></span>
+              </li>
+              <li>
+                Total (7,4) codewords:
+                <span id="summary-total-codewords" class="summary-value"></span>
+              </li>
+              <li>
+                Total single-bit errors introduced:
+                <span
+                  id="summary-errors-introduced"
+                  class="summary-value"
+                ></span>
+              </li>
+              <li>
+                Total errors corrected:
+                <span
+                  id="summary-errors-corrected"
+                  class="summary-value"
+                ></span>
+              </li>
+            </ul>
+          </section>
+
+          <!-- Code definition (G, H matrices) -->
+          <section class="hamming-block" id="code-definition-block">
+            <h3 class="hamming-subtitle">Hamming (7,4) Code Definition</h3>
+            <p class="section-description">
+              The same generator matrix G and parity-check matrix H are used for
+              every 4-bit data block in the selected region.
+            </p>
+
+            <div class="matrix-row">
+              <div class="matrix-group">
+                <div class="matrix-label">
+                  Generator matrix G = [I | P] (4×7)
+                </div>
+                <div class="matrix-container" id="matrix-G">
+                  <!-- Filled by JS -->
+                </div>
+              </div>
+
+              <div class="matrix-group">
+                <div class="matrix-label">
+                  Parity-check matrix H = [Pᵀ | I] (3×7)
+                </div>
+                <div class="matrix-container" id="matrix-H">
+                  <!-- Filled by JS -->
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Live codeword inspector -->
+          <section class="hamming-block" id="inspector-block">
+            <h3 class="hamming-subtitle">Inspect a Codeword from the Region</h3>
+
+            <p class="section-description">
+              Select any codeword index to see the exact bits before noise,
+              after noise, and after Hamming decoding for that block.
+            </p>
+
+            <div class="field">
+              <label for="codeword-index-input" class="field-label">
+                Codeword index (1-based, within selected region)
+              </label>
+              <input
+                type="number"
+                id="codeword-index-input"
+                min="1"
+                step="1"
+                value="1"
+              />
+            </div>
+
+            <p class="helper-text" id="inspector-range">
+              <!-- Filled by JS -->
+            </p>
+
+            <div class="inspector-grid">
+              <div class="inspector-col">
+                <p class="equation-line">
+                  <span class="matrix-label">Pixel (x, y):</span>
+                  <span id="insp-coords" class="bit-sequence"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Nibble in pixel:</span>
+                  <span id="insp-nibble-index" class="bit-sequence"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Original 8-bit gray value:</span>
+                  <span id="insp-gray-value" class="bit-sequence"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Binary (b7…b0):</span>
+                  <span id="insp-gray-bits" class="bit-sequence"></span>
+                </p>
+              </div>
+
+              <div class="inspector-col">
+                <p class="equation-line">
+                  <span class="matrix-label">Data bits D (4 bits):</span>
+                  <span id="insp-data-bits" class="bit-sequence"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Codeword C (7 bits):</span>
+                  <span id="insp-codeword-C" class="bit-sequence"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Bit flipped (1-based index):</span>
+                  <span id="insp-error-bit-index" class="bit-highlight"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Received r after noise:</span>
+                  <span id="insp-received-r" class="bit-sequence"></span>
+                </p>
+              </div>
+
+              <div class="inspector-col">
+                <p class="equation-line">
+                  <span class="matrix-label">Syndrome S = r·Hᵀ (mod 2):</span>
+                  <span id="insp-syndrome-S" class="bit-sequence"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Error position:</span>
+                  <span id="insp-error-position" class="bit-highlight"></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Corrected codeword:</span>
+                  <span
+                    id="insp-corrected-codeword"
+                    class="bit-sequence"
+                  ></span>
+                </p>
+                <p class="equation-line">
+                  <span class="matrix-label">Decoded data bits (4 bits):</span>
+                  <span id="insp-decoded-data-bits" class="bit-sequence"></span>
+                </p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- Section 4: Image visualization -->
+      <section class="card" id="visualization-section">
+        <h2 class="section-title">4. Image Visualization</h2>
+        <p class="section-description">
+          Compare the original image, the image after noise is added in the
+          selected region, and the image after Hamming (7,4) correction.
+        </p>
+
+        <div class="canvas-row">
+          <div class="canvas-column">
+            <h3 class="canvas-title">Original</h3>
+            <div class="canvas-frame">
+              <canvas id="original-canvas"></canvas>
+            </div>
+          </div>
+
+          <div class="canvas-column">
+            <h3 class="canvas-title">After Noise (Corrupted)</h3>
+            <div class="canvas-frame">
+              <canvas id="corrupted-canvas"></canvas>
+            </div>
+          </div>
+
+          <div class="canvas-column">
+            <h3 class="canvas-title">After Hamming Correction</h3>
+            <div class="canvas-frame">
+              <canvas id="corrected-canvas"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p class="footer-text">
+        1CR233C002&nbsp;&nbsp;&nbsp;1CR233C059&nbsp;&nbsp;&nbsp;1CR23EC043
+      </p>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>
